@@ -1,0 +1,17 @@
+# 生成的大图（太占仓库，用提示词生成即可）
+*.png
+*.pptx
+*.jpg
+
+# Python 编译产物
+__pycache__/
+*.pyc
+
+# 生图工作台输出
+生图工作台/output/
+!生图工作台/output/.gitkeep
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+~$*
