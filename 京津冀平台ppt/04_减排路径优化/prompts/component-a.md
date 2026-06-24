@@ -1,34 +1,37 @@
 ---
 id: component-a
-title: 最优减排路径求解流程
+title: 减排路径优化——反算求解流程
 ---
-A high-quality diagram showing the genetic algorithm optimization workflow for emission reduction pathway search. Canvas: 1792x1024 pixels (16:9).
+A clean horizontal 3-stage pipeline diagram showing the inverse optimization workflow. Canvas: 1792x1024 pixels (16:9).
 
-Layout: Three panels in a loop/cycle arrangement. Left panel (inputs), center panel (optimization engine), right panel (outputs), with a feedback arrow from right back to center showing iterative GA evolution.
+Three rounded-rectangle stage cards arranged left to right in one horizontal row, evenly spaced, connected by thick right-pointing arrows (→). Each card is ~30% canvas width, centered vertically.
 
-Left panel — "优化目标与约束" (dark gray #2C3E50, white text):
-- Top: target icon, label "减排目标" with subtext "PM2.5 / O3 达标浓度"
-- Middle: yuan coin icon, label "经济约束" with subtext "ICET 边际成本曲线"
-- Bottom: grid icon, label "控制因子" with subtext "多区域·多行业·多污染物"
+Stage 1 (left, blue #3B7DD8, white text):
+- Top: target/bullseye icon
+- Title: "目标设定"
+- Subtitle: "PM2.5/O3 浓度目标"
+- Bottom small text: "基准年差距分析"
 
-Center panel — "遗传算法寻优" (blue #3B7DD8, white text, largest panel):
-- Top: DNA helix / evolution icon
-- Title: "遗传算法迭代求解"
-- Four sub-items arranged as a cycle:
-  - "种群初始化" (拉丁超立方采样)
-  - "适应度评估" (RSM浓度响应 + 减排成本)
-  - "交叉变异" (选择最优个体)
-  - "精英保留" (Top方案进入下一代)
-- Each iteration labeled with GA parameters in small text: "种群20 · 迭代50代 · 交叉0.8 · 变异0.05"
+Stage 2 (center, orange #E8913A, white text):
+- Top: DNA helix icon
+- Title: "GA 迭代寻优"
+- Subtitle: "种群20·迭代50代"
+- Middle detail box (lightened bg #F5A623):
+  "全部达标 → fitness=成本(越低越好)"
+  "未达标 → fitness=1+超标量/达标率²"
+  in small white text
+- Bottom: "达标优先 + 达标后选成本最低" in tiny white
 
-Right panel — "最优路径输出" (green #4CAF50, white text):
-- Top: trophy icon, label "Top-X 最优方案"
-- Sub-items in a ranked list:
-  - "#1 最优方案" with fitness score + cost + attainment
-  - "#2 次优方案"
-  - "…更多备选路径"
-- Bottom annotation: "每条路径 = 各区域/行业/污染物的最优减排比例组合"
+Stage 3 (right, green #4CAF50, white text):
+- Top: podium/trophy icon
+- Title: "Top 方案输出"
+- Subtitle: "按成本升序排列"
+- Bottom small text: "成本最低 = 最优路径"
 
-Connecting arrows: thick directional arrows between panels. Feedback arrow from right to center labeled "下一代迭代".
+Arrows between cards: thick light-gray #BDC3C7, simple triangle arrowhead.
 
-Style: Clean flat vector, white background #FFFFFF. No 3D. No photo. No gradients. All Chinese labels. Professional government infographic.
+Below all three cards, a full-width annotation line in dark text: "未达标方案 fitness>1，天然排在所有达标方案之后 → 先保证空气质量合格，再挑成本最低的"
+
+Style: Clean flat vector. Solid color fills. White background #FFFFFF. No 3D, no gradients, no shadows. Chinese text. Rounded corners ~8px.
+
+Quality: Professional infographic, crisp edges, perfect alignment.
