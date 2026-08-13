@@ -16,9 +16,12 @@ if sys.platform == "win32":
 import requests
 
 # ==================== config ====================
-API_KEY = os.getenv("GPT_API_KEY", "__REDACTED_API_KEY__")
-BASE_URL = os.getenv("GPT_BASE_URL", "https://one-hub.hycx-gd.cn/v1")
+API_KEY = os.getenv("GPT_API_KEY")
+BASE_URL = os.getenv("GPT_BASE_URL")
 MODEL = os.getenv("PPT_ASSEMBLE_MODEL", "gpt-5.5")
+
+if not API_KEY or not BASE_URL:
+    print("X 请先设置环境变量 GPT_API_KEY 和 GPT_BASE_URL"); sys.exit(1)
 
 # ==================== input ====================
 PAGE_DIR = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else None
