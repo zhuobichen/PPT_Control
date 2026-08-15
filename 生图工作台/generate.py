@@ -50,7 +50,9 @@ CHECKPOINT_FILE = OUTPUT_DIR / ".checkpoint.json"
 GUIDES_DIR = WORKBENCH_DIR.parent / "京津冀平台ppt"
 
 # API 配置
-IMAGE_API_KEY = os.getenv("IMAGE_API_KEY", "__REDACTED_API_KEY__")
+IMAGE_API_KEY = os.getenv("IMAGE_API_KEY")
+if not IMAGE_API_KEY:
+    raise RuntimeError("缺少环境变量 IMAGE_API_KEY：请先设置你的生图服务 API Key（export IMAGE_API_KEY=...）")
 IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "https://one-hub.hycx-gd.cn/v1")
 IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gpt-image-2-ca")
 IMAGE_SIZE = os.getenv("IMAGE_SIZE", "1792x1024")
