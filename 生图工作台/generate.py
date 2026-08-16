@@ -172,7 +172,7 @@ def save_checkpoint(comp_id: str, image_path: str):
 
 # ======================== 图片生成 ========================
 
-def generate_image(prompt: str, output_name: str) -> Optional[str]:
+def generate_image(prompt: str, output_name: str, output_dir: Path = None) -> Optional[str]:
     """调用 GPT-Image2 API 生成图片（线程安全），返回保存路径"""
     headers = {
         "Authorization": f"Bearer {IMAGE_API_KEY}",
@@ -196,7 +196,7 @@ def generate_image(prompt: str, output_name: str) -> Optional[str]:
             )
             if resp.status_code == 200:
                 data = resp.json()["data"][0]
-                return _save_image(data, output_name)
+                return _save_image(data, output_name, output_dir)
             else:
                 error_text = resp.text[:200]
                 if resp.status_code == 400 and "content_filter" in error_text.lower():
@@ -212,9 +212,10 @@ def generate_image(prompt: str, output_name: str) -> Optional[str]:
     return None
 
 
-def _save_image(data: dict, name: str) -> Optional[str]:
-    """保存图片到 output 目录（线程安全）"""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+def _save_image(data: dict, name: str, output_dir: Path = None) -> Optional[str]:
+    """保存图片到指定目录（线程安全），默认 output 目录"""
+    out_dir = Path(output_dir) if output_dir else OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     if "b64_json" in data and data["b64_json"]:
         img_bytes = base64.b64decode(data["b64_json"])
@@ -224,7 +225,7 @@ def _save_image(data: dict, name: str) -> Optional[str]:
     else:
         return None
 
-    out_path = OUTPUT_DIR / f"{name}.png"
+    out_path = out_dir / f"{name}.png"
     with open(out_path, "wb") as f:
         f.write(img_bytes)
 
@@ -332,7 +333,7 @@ def _generate_components(comp_ids: List[str], library: Dict[str, Dict], force: b
     if len(pending) == 1 or not parallel:
         # 单图：顺序
         comp = pending[0]
-        img_path = generate_image(comp["prompt"], comp["id"])
+        img_path = generate_image(comp["prompt"], comp.get("filename", comp["id"]), comp.get("output_dir"))
         if img_path:
             save_checkpoint(comp["id"], img_path)
             size_kb = Path(img_path).stat().st_size / 1024
@@ -343,7 +344,7 @@ def _generate_components(comp_ids: List[str], library: Dict[str, Dict], force: b
         # 并行：ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=len(pending)) as ex:
             futures = {
-                ex.submit(generate_image, comp["prompt"], comp["id"]): comp
+                ex.submit(generate_image, comp["prompt"], comp.get("filename", comp["id"]), comp.get("output_dir")): comp
                 for comp in pending
             }
             success = 0
@@ -376,41 +377,45 @@ def cmd_page(page_num: str, guides: List[Dict], force: bool):
         sys.exit(1)
 
     lib = parse_prompts_dir(guide["prompts_dir"])
+    # 用页面号做前缀（checkpoint 键唯一），图片直接输出到页面文件夹供 assemble.py 使用
+    page_lib = {
+        f"{page_num}_{cid}": {**comp, "id": f"{page_num}_{cid}", "filename": cid, "output_dir": guide["folder"]}
+        for cid, comp in lib.items()
+    }
+    page_comps = [f"{page_num}_{cid}" for cid in guide["components"] if cid in lib]
 
     print(f"\n🎯 第({guide['page']})页: {guide['title']}")
     print(f"   来源: {Path(guide['folder']).name}/{guide['file']}")
-    print(f"   需要 {len(guide['components'])} 个组件: {', '.join(guide['components'])}")
+    print(f"   需要 {len(page_comps)} 个组件: {', '.join(guide['components'])}")
 
-    _generate_components(guide["components"], lib, force)
+    _generate_components(page_comps, page_lib, force)
 
 
 def cmd_all(guides: List[Dict], force: bool):
     """扫描所有页面，为所有组件生图"""
     print("\n🔍 扫描 PPT 制作指南...")
-    all_components = []  # [(cid, lib), ...]
+    all_lib = {}   # {页面号_组件id: comp}
+    ordered = []   # 保序的唯一 id 列表
 
     for g in guides:
         lib = parse_prompts_dir(g["prompts_dir"])
-        comps = [(cid, lib.get(cid)) for cid in g["components"] if lib.get(cid)]
+        comps = []
+        for cid in g["components"]:
+            comp = lib.get(cid)
+            if comp:
+                # 用页面号做前缀（checkpoint 键唯一），图片输出到页面文件夹供 assemble.py 使用
+                full_id = f"{g['page']}_{cid}"
+                all_lib[full_id] = {**comp, "id": full_id, "filename": cid, "output_dir": g["folder"]}
+                ordered.append(full_id)
+                comps.append(full_id)
         unknown = [cid for cid in g["components"] if not lib.get(cid)]
         print(f"   第({g['page']})页 → {len(comps)}个组件: {', '.join(g['components'])}")
         if unknown:
             print(f"     ⚠️ prompts/ 中未找到: {', '.join(unknown)}")
-        all_components.extend(comps)
 
-    # 去重保序（按 component id）
-    seen = set()
-    unique = []
-    all_lib = {}
-    for cid, comp in all_components:
-        if cid not in seen:
-            seen.add(cid)
-            unique.append(cid)
-            all_lib[cid] = comp
+    print(f"\n📊 汇总: {len(guides)} 页面, {len(ordered)} 个组件（已按页面区分）")
 
-    print(f"\n📊 汇总: {len(guides)} 页面, {len(unique)} 个独立组件")
-
-    _generate_components(unique, all_lib, force)
+    _generate_components(ordered, all_lib, force)
 
 
 # ======================== 主入口 ========================
