@@ -91,22 +91,99 @@ code_match = re.search(r"```python\s*\n(.*?)```", raw, re.DOTALL)
 if not code_match: code_match = re.search(r"```\s*\n(.*?)```", raw, re.DOTALL)
 code = code_match.group(1).strip() if code_match else raw
 
+# ==================== 静态审查 + 隔离执行 ====================
+# 审计项：原实现把模型生成的代码直接 subprocess.run 到宿主机。
+# 交互确认只能防手滑，不能限制权限。这里做三件事：
+#   1) 执行前静态扫描危险模式（外部进程 / 网络 / 动态执行 / 越界文件操作）
+#   2) 子进程里注入守卫：禁网、禁起进程（socket/subprocess/ctypes 一律拒绝导入）
+#   3) 限时 300s + 最小环境变量 + 只在专题目录内运行
+DANGEROUS_PATTERNS = [
+    (r"\b(subprocess|os\.system|os\.popen|pty|socket|ctypes|multiprocessing)\b", "外部进程 / 底层调用"),
+    (r"\b(requests|urllib|httpx|aiohttp|websockets|http\.client)\b", "网络访问"),
+    (r"\b(eval|exec|compile)\s*\(", "动态执行代码"),
+    (r"\b(shutil\.rmtree|os\.remove|os\.unlink|os\.rmdir)\b", "删除文件"),
+    (r"\bopen\s*\(\s*[rbfu]*['\"](?:[A-Za-z]:[\\/]|/|\.\.)", "访问绝对路径 / 上级目录"),
+]
+
+SANDBOX_BOOTSTRAP = r'''
+import builtins, os, runpy, sys
+
+BLOCKED = {"socket", "subprocess", "ctypes", "multiprocessing", "pty",
+           "requests", "urllib", "http", "httpx", "aiohttp", "websockets"}
+_orig_import = builtins.__import__
+
+def _guard_import(name, *a, **k):
+    if name.split(".")[0] in BLOCKED:
+        raise RuntimeError("[sandbox] 禁止导入模块: " + name)
+    return _orig_import(name, *a, **k)
+
+builtins.__import__ = _guard_import
+
+def _denied(*a, **k):
+    raise RuntimeError("[sandbox] 禁止执行该操作")
+
+for _n in ("system", "popen", "spawnv", "spawnl", "execv", "execve", "execvp"):
+    if hasattr(os, _n):
+        setattr(os, _n, _denied)
+
+sys.argv = ["build.py"]
+runpy.run_path("build.py", run_name="__main__")
+'''
+
+
+def scan_generated(code: str) -> list[tuple[str, str]]:
+    """返回 [(命中的模式说明, 命中的片段)]，空列表表示没发现问题。"""
+    hits = []
+    for pattern, label in DANGEROUS_PATTERNS:
+        m = re.search(pattern, code)
+        if m:
+            hits.append((label, m.group(0)))
+    return hits
+
+
+def run_sandboxed(code: str, page_dir: Path, timeout: int = 300) -> subprocess.CompletedProcess:
+    """在受限解释器里执行 build.py：禁网、禁起子进程、最小环境、限时。"""
+    (page_dir / "build.py").write_text(code, encoding="utf-8")
+    safe_env = {
+        k: v for k, v in os.environ.items()
+        if k.upper() in {"SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "PATH", "TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA"}
+    }
+    safe_env["PYTHONNOUSERSITE"] = "1"
+    return subprocess.run(
+        [sys.executable, "-I", "-X", "utf8", "-c", SANDBOX_BOOTSTRAP],
+        cwd=str(page_dir), capture_output=True, text=True, timeout=timeout, env=safe_env,
+    )
+
+
 print("\n" + "=" * 60)
-print("GPT generated build.py:")
+print("静态审查")
 print("=" * 60)
-print(code)
-print("=" * 60)
+findings = scan_generated(code)
+if findings:
+    for label, snippet in findings:
+        print(f"  ⚠ {label}: {snippet[:60]}")
+    if not os.getenv("PPT_ASSEMBLE_FORCE"):
+        print("\n发现可疑模式，已拒绝执行。确认无误后用 PPT_ASSEMBLE_FORCE=1 重跑。")
+        print("生成代码已保留在 build.py 供人工审查。")
+        (PAGE_DIR / "build.py").write_text(code, encoding="utf-8")
+        sys.exit(2)
+    print("  （已设置 PPT_ASSEMBLE_FORCE=1，继续）")
+else:
+    print("  未发现外部进程 / 网络 / 动态执行模式")
 
 answer = input(f"\nSave & run -> {OUTPUT_NAME}? [Y/n] ").strip().lower()
 if answer and answer != "y":
     print("Cancelled"); sys.exit(0)
 
 # ==================== save & run ====================
-(PAGE_DIR / "build.py").write_text(code, encoding="utf-8")
-print(f"Saved: build.py")
-
 os.chdir(str(PAGE_DIR))
-result = subprocess.run([sys.executable, "build.py"], capture_output=True, text=True)
+print("运行中（禁网 / 禁子进程 / 300s 上限）...")
+try:
+    result = run_sandboxed(code, PAGE_DIR)
+except subprocess.TimeoutExpired:
+    print("FAIL: 生成脚本超过 300s 未结束，已终止")
+    sys.exit(1)
+
 if result.returncode == 0:
     pptx_path = PAGE_DIR / OUTPUT_NAME
     if not pptx_path.exists():
@@ -116,5 +193,5 @@ if result.returncode == 0:
     size = pptx_path.stat().st_size / 1024 if pptx_path.exists() else 0
     print(f"Done: {OUTPUT_NAME} ({size:.0f}KB)")
 else:
-    print(f"FAIL: {result.stderr}")
+    print(f"FAIL: {result.stderr[:1500]}")
     print(f"  code kept at build.py for manual debug")
